@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <algorithm>
 #include <highlevelmonitorconfigurationapi.h>
 
 #pragma comment(lib, "Dxva2.lib")
@@ -199,7 +200,9 @@ namespace screen_brightness
 			return;
 		}
 
-		const long brightness_value = GetScreenBrightnessValueByPercentage(brightness);
+		const double clamped_brightness = std::min(1.0, std::max(0.0, brightness));
+
+		const long brightness_value = GetScreenBrightnessValueByPercentage(clamped_brightness);
 		try
 		{
 			system_screen_brightness_ = brightness_value;
@@ -271,7 +274,8 @@ namespace screen_brightness
 			return;
 		}
 
-		const long brightness_value = GetScreenBrightnessValueByPercentage(brightness);
+		const double clamped_brightness = std::min(1.0, std::max(0.0, brightness));
+		const long brightness_value = GetScreenBrightnessValueByPercentage(clamped_brightness);
 		try
 		{
 			SetScreenBrightness(brightness_value);
