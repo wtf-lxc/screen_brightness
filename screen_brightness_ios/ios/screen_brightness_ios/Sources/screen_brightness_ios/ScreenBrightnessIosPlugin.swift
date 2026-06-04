@@ -1,7 +1,7 @@
 import Flutter
 import UIKit
 
-public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin, FlutterSceneLifeCycleDelegate {
+public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin, FlutterApplicationDelegate {
     var registrar: FlutterPluginRegistrar
     var methodChannel: FlutterMethodChannel?
 
@@ -26,7 +26,7 @@ public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin, FlutterSceneLif
     init(registrar: FlutterPluginRegistrar) {
         self.registrar = registrar
         super.init()
-        systemScreenBrightness = currentScreen?.brightness ?? UIScreen.main.brightness
+        systemScreenBrightness = UIScreen.main.brightness
     }
 
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -41,11 +41,19 @@ public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin, FlutterSceneLif
         instance.applicationScreenBrightnessChangedEventChannel!.setStreamHandler(instance.applicationScreenBrightnessChangedStreamHandler)
         
         registrar.addApplicationDelegate(instance)
-        registrar.addSceneDelegate(instance)
+        
+        // Observe scene lifecycle notifications for scene-based lifecycle
+        NotificationCenter.default.addObserver(instance, selector: #selector(instance.sceneDidBecomeActiveNotification(_:)), name: UIScene.didActivateNotification, object: nil)
+        NotificationCenter.default.addObserver(instance, selector: #selector(instance.sceneWillResignActiveNotification(_:)), name: UIScene.willDeactivateNotification, object: nil)
+        NotificationCenter.default.addObserver(instance, selector: #selector(instance.sceneDidDisconnectNotification(_:)), name: UIScene.didDisconnectNotification, object: nil)
     }
 
     private var currentScreen: UIScreen? {
-        return registrar.viewController?.view.window?.windowScene?.screen
+        if #available(iOS 13.0, *) {
+            let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+            return scene?.screens.first ?? scene?.windows.first?.windowScene?.screen
+        }
+        return UIScreen.main
     }
     
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -195,31 +203,26 @@ public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin, FlutterSceneLif
         result(true)
     }
     
-    public func sceneWillResignActive(_ scene: UIScene) {
-        guard isAutoReset else {
-            return
-        }
-        
+    // MARK: - Scene lifecycle via notifications (compatible with Flutter 3.22+)
+    
+    @objc private func sceneWillResignActiveNotification(_ notification: Notification) {
+        guard isAutoReset else { return }
         onApplicationPause()
         NotificationCenter.default.addObserver(self, selector: #selector(onSystemScreenBrightnessChanged), name: UIScreen.brightnessDidChangeNotification, object: nil)
     }
     
-    public func sceneDidBecomeActive(_ scene: UIScene) {
-        guard isAutoReset else {
-            return
-        }
-        
+    @objc private func sceneDidBecomeActiveNotification(_ notification: Notification) {
+        guard isAutoReset else { return }
         NotificationCenter.default.removeObserver(self, name: UIScreen.brightnessDidChangeNotification, object: nil)
         systemScreenBrightness = currentScreen?.brightness ?? UIScreen.main.brightness
         handleSystemScreenBrightnessChanged(systemScreenBrightness!)
         if (applicationScreenBrightness == nil) {
             handleApplicationScreenBrightnessChanged(systemScreenBrightness!)
         }
-        
         onApplicationResume()
     }
     
-    public func sceneDidDisconnect(_ scene: UIScene) {
+    @objc private func sceneDidDisconnectNotification(_ notification: Notification) {
         onApplicationTerminate()
         NotificationCenter.default.removeObserver(self)
     }
