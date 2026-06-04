@@ -23,14 +23,14 @@ public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin {
         return queue
     }()
 
-    init(registrar: FlutterPluginRegistrar) {
-        self.registrar = registrar
+    init(registration: FlutterPluginRegistrar) {
+        self.registrar = registration
         super.init()
         systemScreenBrightness = UIScreen.main.brightness
     }
 
     public static func register(with registrar: FlutterPluginRegistrar) {
-        let instance = ScreenBrightnessIosPlugin(registrar: registrar)
+        let instance = ScreenBrightnessIosPlugin(registration: registrar)
         instance.methodChannel = FlutterMethodChannel(name: "github.com/aaassseee/screen_brightness", binaryMessenger: registrar.messenger())
         registrar.addMethodCallDelegate(instance, channel: instance.methodChannel!)
 
@@ -40,10 +40,10 @@ public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin {
         instance.applicationScreenBrightnessChangedEventChannel = FlutterEventChannel(name: "github.com/aaassseee/screen_brightness/application_brightness_changed", binaryMessenger: registrar.messenger())
         instance.applicationScreenBrightnessChangedEventChannel!.setStreamHandler(instance.applicationScreenBrightnessChangedStreamHandler)
         
-        // Observe app lifecycle via notifications (works on all Flutter versions)
-        NotificationCenter.default.addObserver(instance, selector: #selector(instance.applicationDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
-        NotificationCenter.default.addObserver(instance, selector: #selector(instance.applicationWillResignActive), name: UIApplication.willResignActiveNotification, object: nil)
-        NotificationCenter.default.addObserver(instance, selector: #selector(instance.applicationWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
+        // Use NotificationCenter with renamed methods to avoid Flutter delegate conflicts
+        NotificationCenter.default.addObserver(instance, selector: #selector(instance.onAppDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(instance, selector: #selector(instance.onAppWillResignActive), name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(instance, selector: #selector(instance.onAppWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
     }
 
     private var currentScreen: UIScreen? {
@@ -145,15 +145,15 @@ public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin {
         applicationScreenBrightnessChangedStreamHandler.addScreenBrightnessToEventSink(brightness)
     }
 
-    // MARK: - Lifecycle (notifications, no FlutterApplicationDelegate needed)
+    // MARK: - Renamed lifecycle handlers (no conflict with Flutter delegate)
 
-    @objc private func applicationWillResignActive(_ notification: Notification) {
+    @objc private func onAppWillResignActive(_ notification: Notification) {
         guard isAutoReset else { return }
-        onApplicationPause()
-        NotificationCenter.default.addObserver(self, selector: #selector(onSystemScreenBrightnessChanged), name: UIScreen.brightnessDidChangeNotification, object: nil)
+        pauseScreenBrightness()
+        NotificationCenter.default.addObserver(self, selector: #selector(onScreenBrightnessChanged), name: UIScreen.brightnessDidChangeNotification, object: nil)
     }
     
-    @objc private func applicationDidBecomeActive(_ notification: Notification) {
+    @objc private func onAppDidBecomeActive(_ notification: Notification) {
         guard isAutoReset else { return }
         NotificationCenter.default.removeObserver(self, name: UIScreen.brightnessDidChangeNotification, object: nil)
         systemScreenBrightness = currentScreen?.brightness ?? UIScreen.main.brightness
@@ -161,14 +161,14 @@ public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin {
         if applicationScreenBrightness == nil {
             handleApplicationScreenBrightnessChanged(systemScreenBrightness!)
         }
-        onApplicationResume()
+        resumeScreenBrightness()
     }
     
-    @objc private func applicationWillTerminate(_ notification: Notification) {
-        onApplicationTerminate()
+    @objc private func onAppWillTerminate(_ notification: Notification) {
+        terminateScreenBrightness()
     }
     
-    @objc private func onSystemScreenBrightnessChanged(notification: Notification) {
+    @objc private func onScreenBrightnessChanged(_ notification: Notification) {
         guard let screenObject = notification.object, let brightness = (screenObject as AnyObject).brightness else { return }
         systemScreenBrightness = brightness
         handleSystemScreenBrightnessChanged(brightness)
@@ -214,17 +214,17 @@ public class ScreenBrightnessIosPlugin: NSObject, FlutterPlugin {
         }), waitUntilFinished: false)
     }
     
-    func onApplicationPause() {
+    func pauseScreenBrightness() {
         guard let b = systemScreenBrightness else { return }
         setScreenBrightness(targetBrightness: b, animated: isAnimate, duration: 0.5)
     }
     
-    func onApplicationResume() {
+    func resumeScreenBrightness() {
         guard let b = applicationScreenBrightness else { return }
         setScreenBrightness(targetBrightness: b, animated: isAnimate, duration: 0.5)
     }
     
-    func onApplicationTerminate() {
+    func terminateScreenBrightness() {
         guard let b = systemScreenBrightness else { return }
         UIScreen.main.brightness = b
     }
